@@ -1,0 +1,15 @@
+node_modules
+dist
+coverage
+.git
+.gitignore
+.cursor
+.specstory
+.env
+.env.*
+!.env.example
+*.log
+docker-compose.yml
+README.md
+docs
+browser-screenshots

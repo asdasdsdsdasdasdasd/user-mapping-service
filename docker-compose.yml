@@ -1,0 +1,97 @@
+name: user-mapping-service
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-local_root_password}
+      MYSQL_DATABASE: ${DB_DATABASE:-user_mapping}
+      MYSQL_USER: ${DB_USERNAME:-app}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-local_app_password}
+    ports:
+      - '${DB_PORT:-3306}:3306'
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mysqladmin ping -h 127.0.0.1 -u root -p"${MYSQL_ROOT_PASSWORD:-local_root_password}" --silent
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    # Redis authentication is optional; it is enabled when REDIS_PASSWORD is set.
+    command:
+      - sh
+      - -c
+      - |
+        if [ -n "$$REDIS_PASSWORD" ]; then
+          exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+        fi
+        exec redis-server --appendonly yes
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - redis-cli ${REDIS_PASSWORD:+-a "$$REDIS_PASSWORD" --no-auth-warning} ping | grep -q PONG
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      target: production
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      # Not "service_healthy": the application stays correct without Redis,
+      # so a Redis that is still starting must not block the API.
+      redis:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      API_GLOBAL_PREFIX: api
+      DB_TYPE: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USERNAME: ${DB_USERNAME:-app}
+      DB_PASSWORD: ${DB_PASSWORD:-local_app_password}
+      DB_DATABASE: ${DB_DATABASE:-user_mapping}
+      DB_SYNCHRONIZE: 'false'
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-user-mapping:}
+      REDIS_CACHE_TTL_SECONDS: ${REDIS_CACHE_TTL_SECONDS:-900}
+      REDIS_LOCK_TTL_MS: ${REDIS_LOCK_TTL_MS:-5000}
+    ports:
+      - '${APP_PORT:-3000}:3000'
+    # The schema is applied by the migration before the API starts serving.
+    command:
+      - sh
+      - -c
+      - npm run migration:run:prod && node dist/main.js
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -q -O - http://127.0.0.1:3000/api/v1/health | grep -q '"status":"ok"'
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  mysql-data:
+  redis-data:
