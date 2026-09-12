@@ -1,0 +1,32 @@
+# Dependencies
+/node_modules
+
+# Build output
+/dist
+/build
+
+# Environment files: never commit real credentials
+.env
+.env.*
+!.env.example
+
+# Tests
+/coverage
+/.nyc_output
+
+# Logs and runtime artefacts
+*.log
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+/logs
+
+# Editors and operating systems
+.idea
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+
+# TypeScript incremental build info
+*.tsbuildinfo
