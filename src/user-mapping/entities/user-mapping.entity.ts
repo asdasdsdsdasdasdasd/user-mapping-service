@@ -5,7 +5,6 @@ import {
   Index,
   PrimaryGeneratedColumn,
   Unique,
-  UpdateDateColumn,
 } from 'typeorm';
 
 /**
@@ -31,9 +30,7 @@ export class UserMapping {
   @Column({ name: 'user_id', type: 'varchar', length: 36 })
   userId: string;
 
-  @CreateDateColumn({ name: 'created_at', type: 'datetime' })
+  // No updated_at: rows are never modified, so such a column could never change.
+  @CreateDateColumn({ name: 'created_at', type: 'datetime', precision: 6 })
   createdAt: Date;
-
-  @UpdateDateColumn({ name: 'updated_at', type: 'datetime' })
-  updatedAt: Date;
 }
