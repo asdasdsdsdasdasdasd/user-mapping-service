@@ -23,6 +23,7 @@ export interface DatabaseConfig {
 export interface RedisConfig {
   enabled: boolean;
   url: string;
+  password: string;
   keyPrefix: string;
   cacheTtlSeconds: number;
   lockTtlMs: number;
@@ -79,6 +80,7 @@ export const redisConfig = registerAs('redis', (): RedisConfig => {
     // guarantees that an id1/id2 pair maps to exactly one userID.
     enabled: url.length > 0,
     url,
+    password: process.env.REDIS_PASSWORD ?? '',
     keyPrefix: toTrimmedString(process.env.REDIS_KEY_PREFIX, 'user-mapping:'),
     cacheTtlSeconds: toNumber(process.env.REDIS_CACHE_TTL_SECONDS, 900),
     lockTtlMs: toNumber(process.env.REDIS_LOCK_TTL_MS, 5000),

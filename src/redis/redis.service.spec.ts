@@ -27,6 +27,7 @@ const createConfigService = (
     getOrThrow: jest.fn().mockReturnValue({
       enabled: true,
       url: 'redis://localhost:6379',
+      password: '',
       keyPrefix: 'test:',
       cacheTtlSeconds: 60,
       lockTtlMs: 1000,

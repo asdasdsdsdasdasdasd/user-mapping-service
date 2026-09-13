@@ -30,8 +30,9 @@ export const envValidationSchema = Joi.object({
   DB_LOGGING: Joi.boolean().default(false),
   DB_POOL_SIZE: Joi.number().integer().min(1).max(100).default(10),
 
-  // Optional by design: leaving it empty disables the Redis cache and lock.
+  // Optional by design: leaving REDIS_URL empty disables the Redis cache and lock.
   REDIS_URL: Joi.string().allow('').default(''),
+  REDIS_PASSWORD: Joi.string().allow('').default(''),
   REDIS_KEY_PREFIX: Joi.string().default('user-mapping:'),
   REDIS_CACHE_TTL_SECONDS: Joi.number().integer().min(1).default(900),
   REDIS_LOCK_TTL_MS: Joi.number().integer().min(1000).default(5000),

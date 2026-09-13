@@ -47,6 +47,7 @@ export class RedisService implements OnModuleDestroy {
     }
 
     this.client = new Redis(config.url, {
+      password: config.password.length > 0 ? config.password : undefined,
       // Fail fast instead of queueing commands while Redis is unreachable.
       enableOfflineQueue: false,
       maxRetriesPerRequest: 1,
