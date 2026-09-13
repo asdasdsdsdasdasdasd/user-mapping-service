@@ -5,10 +5,13 @@ services:
     image: mysql:8.0
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-local_root_password}
+      # No fallback values on purpose: compose refuses to start until the
+      # passwords are provided, so a stack can never come up with a weak,
+      # checked-in default credential.
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required - copy .env.example to .env and set it}
       MYSQL_DATABASE: ${DB_DATABASE:-user_mapping}
       MYSQL_USER: ${DB_USERNAME:-app}
-      MYSQL_PASSWORD: ${DB_PASSWORD:-local_app_password}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required - copy .env.example to .env and set it}
     ports:
       - '${DB_PORT:-3306}:3306'
     volumes:
@@ -16,7 +19,7 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - mysqladmin ping -h 127.0.0.1 -u root -p"${MYSQL_ROOT_PASSWORD:-local_root_password}" --silent
+        - mysqladmin ping -h 127.0.0.1 -u root -p"$$MYSQL_ROOT_PASSWORD" --silent
       interval: 5s
       timeout: 5s
       retries: 20
@@ -26,8 +29,8 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     environment:
+      # Optional: an empty value means Redis runs without authentication.
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-    # Redis authentication is optional; it is enabled when REDIS_PASSWORD is set.
     command:
       - sh
       - -c
@@ -68,11 +71,15 @@ services:
       DB_HOST: mysql
       DB_PORT: 3306
       DB_USERNAME: ${DB_USERNAME:-app}
-      DB_PASSWORD: ${DB_PASSWORD:-local_app_password}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required - copy .env.example to .env and set it}
       DB_DATABASE: ${DB_DATABASE:-user_mapping}
       DB_SYNCHRONIZE: 'false'
       DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      # Inside the compose network the API always talks to the bundled Redis
+      # service, so REDIS_URL from .env (which points at a localhost Redis for
+      # local development) is deliberately not used here.
+      REDIS_URL: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-user-mapping:}
       REDIS_CACHE_TTL_SECONDS: ${REDIS_CACHE_TTL_SECONDS:-900}
       REDIS_LOCK_TTL_MS: ${REDIS_LOCK_TTL_MS:-5000}
