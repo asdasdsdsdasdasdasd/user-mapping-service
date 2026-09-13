@@ -29,12 +29,19 @@ it; every later request for the same pair returns the very same `userID`.
 
 ## Quick start with Docker Compose
 
-Everything (API + MySQL 8 + Redis) starts with one command:
+Everything (API + MySQL 8 + Redis) starts with one command, after the passwords have been
+set - they have no default on purpose:
 
 ```bash
-cp .env.example .env      # adjust the passwords if you like
+cp .env.example .env
+# then set DB_PASSWORD and MYSQL_ROOT_PASSWORD in .env, for example:
+#   sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=$(openssl rand -base64 24)|" .env
+#   sed -i "s|^MYSQL_ROOT_PASSWORD=.*|MYSQL_ROOT_PASSWORD=$(openssl rand -base64 24)|" .env
 docker compose up --build
 ```
+
+Without those values `docker compose` stops immediately with an explicit message instead of
+silently starting a stack with a well-known password.
 
 The API is then available on <http://localhost:3000>:
 
@@ -109,7 +116,8 @@ schema is validated by Joi at boot, so the application refuses to start with an 
 | `DB_SYNCHRONIZE` | `false` | Must stay `false`: the migrations own the schema |
 | `DB_LOGGING` | `false` | Log executed SQL |
 | `DB_POOL_SIZE` | `10` | MySQL connection pool size |
-| `REDIS_URL` | `''` | `redis://[:password@]host:port`. **Empty disables Redis** |
+| `REDIS_URL` | `''` | `redis://host:port`. **Empty disables Redis.** Under Docker Compose the API always uses `redis://redis:6379` and this value is ignored |
+| `REDIS_PASSWORD` | `''` | Optional Redis `AUTH` password. Compose also uses it to start Redis with `--requirepass` |
 | `REDIS_KEY_PREFIX` | `user-mapping:` | Prefix of every Redis key |
 | `REDIS_CACHE_TTL_SECONDS` | `900` | TTL of cached `userID` values |
 | `REDIS_LOCK_TTL_MS` | `5000` | TTL of the short-lived distributed lock |
@@ -134,7 +142,6 @@ CREATE TABLE user_mappings (
   id2        VARCHAR(64) COLLATE utf8mb4_bin NOT NULL,
   user_id    VARCHAR(36) COLLATE ascii_general_ci NOT NULL,
   created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
   PRIMARY KEY (id),
   UNIQUE INDEX uq_user_mappings_id1_id2 (id1, id2),
   INDEX idx_user_mappings_user_id (user_id)
@@ -146,7 +153,7 @@ CREATE TABLE user_mappings (
 | `id` | Surrogate primary key; keeps InnoDB inserts sequential |
 | `id1`, `id2` | The identifying pair. `utf8mb4_bin` keeps identifiers case-sensitive, so `ABC` and `abc` stay different pairs |
 | `user_id` | The generated UUID v4, stored as its canonical 36-character text form |
-| `created_at` / `updated_at` | Operational visibility |
+| `created_at` | Operational visibility. There is deliberately no `updated_at`: rows are inserted once and never modified, so such a column could never change |
 | `uq_user_mappings_id1_id2` | **The guarantee** that one pair maps to exactly one `userID`, including under concurrency |
 | `idx_user_mappings_user_id` | Supports lookups by `userID` |
 
@@ -235,24 +242,21 @@ pipeline used in production (`configureApp`), against an in-memory SQLite databa
 disabled, and assert the full behaviour including eight simultaneous identical requests
 producing one row and one `userID`. They need no services and are safe to run anywhere.
 
-To run the same integration suite against the real MySQL 8 and Redis (this is what CI should
-use, and it exercises MySQL's own duplicate-key error):
+The same suite also runs against the real MySQL 8 and Redis. This is the more faithful run -
+it exercises MySQL's own duplicate-key error (`ER_DUP_ENTRY`), the binary collations and the
+migrations instead of SQLite:
 
 ```bash
-docker compose up -d mysql redis
-
-# a dedicated database, so the tests never touch application data
-docker compose exec mysql mysql -uroot -p"${MYSQL_ROOT_PASSWORD:-local_root_password}" \
-  -e "CREATE DATABASE IF NOT EXISTS user_mapping_test; GRANT ALL ON user_mapping_test.* TO 'app'@'%';"
-
-DB_TYPE=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_USERNAME=app DB_PASSWORD=local_app_password \
-DB_DATABASE=user_mapping_test DB_SYNCHRONIZE=true REDIS_URL=redis://127.0.0.1:6379 \
-npm run test:e2e
+cp .env.example .env    # with DB_PASSWORD and MYSQL_ROOT_PASSWORD set, see Quick start
+npm run test:e2e:mysql
 ```
 
-(`DB_SYNCHRONIZE=true` lets TypeORM create the test schema from the entity; the application
-itself always uses migrations.) Each test works on its own `id1`/`id2` pair so that a running
-Redis cache cannot leak state between tests.
+`scripts/e2e-mysql.sh` starts the Compose services, creates a throwaway database, applies the
+real migration to it, runs the suite with MySQL + Redis and drops the database afterwards
+(`KEEP=1` keeps it for inspection, and extra arguments are forwarded to jest).
+
+Each test works on its own `id1`/`id2` pair so that a running Redis cache cannot leak state
+between tests.
 
 ## How Redis is used
 
@@ -317,11 +321,18 @@ service keeps working and simply falls back to layer 1.
   idempotent, and returning a different status for the two cases would make clients treat
   retries as errors. The creation is logged, so the event is still observable.
 * **The mapping table is append-only**, which is what makes caching without invalidation safe.
+  A row is inserted once and never modified, so there is no `updated_at` column - it could
+  never change and would only be a dead field.
 * **`userID` is a UUID v4** generated with `crypto.randomUUID()` and stored as 36 characters.
-* **Migrations own the schema.** `DB_SYNCHRONIZE` is `false` everywhere except the tests, and
-  the production image applies migrations before starting.
+* **Migrations own the schema.** `DB_SYNCHRONIZE` is `false` everywhere except the SQLite test
+  run, and the production image applies migrations before starting. The entity and the migration
+  declare the same column types and precision (`DATETIME(6)`), so the two never drift.
+* **Configuration fails closed.** There are no default credentials: Joi refuses to boot the
+  application on an incomplete MySQL configuration, and Docker Compose refuses to start without
+  `DB_PASSWORD` and `MYSQL_ROOT_PASSWORD` instead of falling back to a known password.
 * **`better-sqlite3` support exists only for the test suite** so that `npm run test:e2e` runs
-  without Docker; MySQL remains the only supported production database.
+  without Docker; MySQL remains the only supported production database, and
+  `npm run test:e2e:mysql` runs the same suite against the real thing.
 * **No authentication** is implemented: the brief does not mention callers or credentials, and
   inventing an auth scheme would add unrequested surface area. In a real deployment this
   endpoint would sit behind the platform's authentication and rate limiting.
@@ -353,6 +364,8 @@ src/
     ├── user-mapping.controller.ts    # HTTP layer
     ├── user-mapping.service.ts       # resolve-or-create logic
     └── user-mapping.module.ts
+scripts/
+└── e2e-mysql.sh                      # integration suite against real MySQL 8 + Redis
 test/
 ├── setup-env.ts                      # test environment defaults
 ├── user-mapping.e2e-spec.ts
