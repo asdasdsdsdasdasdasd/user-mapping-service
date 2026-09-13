@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -24,13 +25,16 @@ interface ErrorBody {
 }
 
 /**
- * Every test works on its own pair. Real pairs are never deleted, so reusing one
- * across tests would let the Redis cache (when a Redis is configured) answer
- * from an earlier test's data and hide the behaviour under test.
+ * Every test works on its own pair, and the run id keeps two runs of this suite
+ * apart: identifiers are never deleted in production, so without it a Redis
+ * cache filled by an earlier run would answer for the same pair and hide the
+ * behaviour under test.
  */
+const RUN_ID = randomUUID().slice(0, 8);
+
 const pair = (name: string, family = 'A'): { id1: string; id2: string } => ({
-  id1: `${name}-${family}`,
-  id2: `${name}-${family}-B`,
+  id1: `${RUN_ID}-${name}-${family}`,
+  id2: `${RUN_ID}-${name}-${family}-B`,
 });
 
 describe('POST /api/v1/user-mappings (e2e)', () => {
